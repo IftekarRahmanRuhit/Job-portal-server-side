@@ -16,6 +16,30 @@ app.use(cors({
 app.use(express.json());
 app.use(cookieParser());
 
+const logger = (req,res,next)=>{
+    console.log('inside the logger')
+    next()
+}
+const verifyToken = (req,res,next)=>{
+    console.log('inside the verifyToken middleware')
+
+    const token = req?.cookies?.token
+
+    if(!token){
+        return res.status(401).send({ message: 'unAuthorized access' })
+    }
+    jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+        if (err) {
+            return res.status(401).send({ message: 'unauthorized access' })
+        }
+        req.user = decoded;
+        next();
+    })
+
+    
+}
+
+
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.iofbf.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
@@ -52,10 +76,20 @@ async function run() {
             .send({ success: true })
         })
 
+        app.post('/logout', (req,res)=>{
+            res
+            .clearCookie('token',{
+                httpOnly: true,
+                secure: false
+            })
+            .send({success: true})
+        })
+
 
 
         // jobs related APIs
-        app.get('/jobs', async (req, res) => {
+        app.get('/jobs', logger,  async (req, res) => {
+            console.log('now inside the api callback')
             const email = req.query.email;
             let query = {};
             if (email) {
@@ -82,11 +116,15 @@ async function run() {
 
         // job application apis
         // get all data, get one data, get some data [o, 1, many]
-        app.get('/job-application', async (req, res) => {
+        app.get('/job-application', verifyToken, async (req, res) => {
             const email = req.query.email;
             const query = { applicant_email: email }
 
-            console.log('cookies',req.cookies)
+            if (req.user.email !== req.query.email) {
+                return res.status(403).send({ message: 'forbidden access' });
+            }
+
+            // console.log('cookies',req.cookies)
 
             const result = await jobApplicationCollection.find(query).toArray();
 
